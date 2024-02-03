@@ -1,0 +1,24 @@
+bits 16
+
+16 bits
+16 bits
+8 bits
+16 bits
+16 bits
+8 bits
+16 bits
+8 bits
+16 bits
+16 bits
+8 bits
+8 bits
+8 bits
+16 bits
+16 bits
+16 bits
+16 bits
+16 bits
+16 bits
+8 bits
+16 bits
+16 bits
