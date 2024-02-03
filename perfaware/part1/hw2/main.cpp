@@ -48,43 +48,6 @@
  * (1000), { mov, add, or, ...}  -> () [MOV] 
  *  
  *
- */
-
-
-
-#define REG_TO_REG 0b100010
-
-enum Width{
-	Byte = 0,
-	Word = 1,
-};
-
-enum Mod{ 
-	MEM_MEM,
-	MEM_MOD_8,
-	MEM_MOD_16,
-	REGISTER_MOD,
-};
-
-struct Instruction{ 
-
-	Instruction(std::string nmuemonic) : nmuemonic{nmuemonic}{
-	}
-
-	std::string nmuemonic;
-	union{ 
-		uint8_t _register_8;
-		uint16_t _register_16;
-	} _register;
-	union{ 
-		uint8_t _rmi_8;
-		uint8_t _rmi_16;
-	}_rmi;
-};
-
-
-
-/*
  * 
  * inital thoughts
  * state 1 => vector of possible <string>, MOV, ADD, etc
@@ -126,6 +89,41 @@ struct Instruction{
  *
  */
 
+
+
+
+#define REG_TO_REG 0b100010
+
+enum Width{
+	Byte = 0,
+	Word = 1,
+};
+
+enum Mod{ 
+	MEM_MEM,
+	MEM_MOD_8,
+	MEM_MOD_16,
+	REGISTER_MOD,
+};
+
+struct Instruction{ 
+
+	Instruction(std::string nmuemonic) : nmuemonic{nmuemonic}{
+	}
+
+	std::string nmuemonic;
+	bool is_destination_reg;
+	union{ 
+		uint8_t _register_8;
+		uint16_t _register_16;
+	} _register;
+	union{ 
+		uint8_t _rmi_8;
+		uint16_t _rmi_16;
+	}_rmi;
+};
+
+
 typedef unsigned char State;
 
 
@@ -135,7 +133,7 @@ struct _State{
 
 	}
 
-	_State(Instruction* instruction) : is_valid{true} {
+	_State(Instruction* instruction) : is_valid{true}, instruction{instruction} {
 	}
 
 
@@ -169,9 +167,8 @@ struct _State{
  *  _State inital_state{false};
  *  inital_state.add_state(0xB);
  *
- *  inital_state.add_state(0x8, nullptr).add_state(0x2, nullptr);
- *  
- *
+ *  auto full_instruction = inital_state.add_state(0x8, nullptr).add_state(0x2, nullptr); #
+ *  full_instruction.add_state(0x7, insert INSTUCTION ); # MOD 
  *  
  *
  */
@@ -205,54 +202,36 @@ main(int argc, char** argv){
 	const std::vector<std::string> b_registers{"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 
 	_State inital_state{};
-	inital_state.add_state(0xB, nullptr)->add_state(0x2, "MOV");
-
-	std::map<uint8_t, std::string> inst_map{
-		{0x22, "mov"},
-	};
-
+	auto mov_reg_reg = inital_state.add_state(0x8, nullptr)->add_state(0x2, nullptr);
+	mov_reg_reg->add_state(0x3, new Instruction{"mov"});
 
 	auto it = buffer.begin();
 	auto registers{&w_registers};
 	while(it != buffer.end()){
-		unsigned char op_code = (0xFC & *it) >> 2;
+
+		auto ho_nibble{*it >> 4};
+		auto lo_nibble{(*it & 0xC) >> 2};
 		bool is_destination_reg = (0x02 & *it);
-		auto nibble{*it >> 4};
+		bool width = (0x01 & *it);
+
+		std::cout << ho_nibble << std::endl;
+		std::cout << lo_nibble << std::endl;
 		auto *state_map = &_mnuemonic;
+		_State* state = inital_state.get_next_state(ho_nibble)->get_next_state(lo_nibble);
+
+		it++;
+		std::cout << ((*it & 0xC0) >> 6) << std::endl;
+		auto instr = state->get_next_state((*it & 0xC0) >> 6)->instruction;
+
+		if (!instr){
+			std::cout << "END" << std::endl;
+			exit(1);
+		}
 		
 
-		while(1) {
-			auto lo_map = state_map->find(nibble);
-		    if (lo_map == state_map->end()){ 
-		    	break;
-			}
+		std::cout << instr->nmuemonic << std::endl;
 
-			auto lo_nibble{*it & 0xF};
-			TransitionInstructionState& state = lo_map->second[lo_nibble | 0xF];
-
-			if (state.accepted_state){
-				std::cout << state.mnuemonic;
-				break;
-			}
-			
-			break;
-		}
-		Instruction instr;
-		instr.op = op_code;
-
-		switch (*it & 0x01) {
-			case Width::Byte : {
-				registers = &b_registers;
-				break;
-			}
-			case Width::Word : 
-				registers = &w_registers;
-				break;
-			default: 
-				std::cout << "invalid bit encoding" <<std::endl;
-				exit(1);
-		}
-
+		exit(1);
 		auto next_byte = *(++it); 
 		auto dest_idx = (0x38 & next_byte)>>3;
 		auto src_idx = (0x7 & next_byte);
@@ -262,30 +241,8 @@ main(int argc, char** argv){
 			src_idx ^= dest_idx;
 		}
 		
-		auto mnuemonic = inst_map[instr.op];
-		switch ((next_byte & 0xC0) >> 6){
-			case Mod::MEM_MEM:
-				break;
-			case Mod::MEM_MOD_8:
-
-				break;
-			case Mod::MEM_MOD_16:
-				break;
-			case Mod::REGISTER_MOD: {
-				auto d_reg = (*registers)[dest_idx];
-				auto src_reg = (*registers)[src_idx];
-				std::cout << mnuemonic << " " << d_reg << ", " << src_reg << std::endl;
-				break;
-			}
-			default:
-				break;
-		};
-		
-
-		it++;
 		
 	}
-
 }
 
 
