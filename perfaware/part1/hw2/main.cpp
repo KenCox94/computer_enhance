@@ -54,48 +54,6 @@
 
 #define REG_TO_REG 0b100010
 
-
-
-
-enum MOV{ 
-	REG_IMM = 0xB0,
-	MEM_ACCUM = 0xA8,
-	REG_MEM  = 0x88,
-};
-
-typedef std::map<int, std::string> opcode_map;
-typedef std::map<int, std::string> Dest_State;
-
-struct NFA{
-	int inital_state; //first six bytes  
-	bool is_final; // false on upper_nibble
-	std::map<int, Dest_State> transition_map; // 
-};
-
-
-//NFA inital_state => first byte
-// is_final we can map to an instruction => false 
-//  transition_map => MOD (00) =>  
-
-struct Instruct{
-	unsigned char op: 6,
-				  d:  1,
-	 			  w:  1;
-
-	unsigned char mod: 2,
-				  reg: 3,
-				  r_m: 3; 
-};
-
-struct Instruction{ 
-	uint8_t op;
-	union{ 
-		uint8_t _register_8;
-		uint16_t _register_16;
-	} _register;
-	void* _rmi;
-};
-
 enum Width{
 	Byte = 0,
 	Word = 1,
@@ -108,6 +66,131 @@ enum Mod{
 	REGISTER_MOD,
 };
 
+struct Instruction{ 
+
+	Instruction(std::string nmuemonic) : nmuemonic{nmuemonic}{
+	}
+
+	std::string nmuemonic;
+	union{ 
+		uint8_t _register_8;
+		uint16_t _register_16;
+	} _register;
+	union{ 
+		uint8_t _rmi_8;
+		uint8_t _rmi_16;
+	}_rmi;
+};
+
+
+
+/*
+ * 
+ * inital thoughts
+ * state 1 => vector of possible <string>, MOV, ADD, etc
+ *       1 -> 0  Vector<states>   { 0, 1} 
+ *       1 0 0 => Map<bool, Vector<ValidInstructions>>
+ *
+ * typedef bool State;
+ * 
+ * struct ValidInstruction {
+ *    string mnuemonic;
+ *    bool is_instruct;
+ * };
+ *
+ *
+ * typedef struct SM { 
+ *    ValidInstruction is_instruct;
+ *    State state_current;
+ *    bool is_not_valid_instruction;
+ *    Map<State, vector<ValidInstruction>>
+ * } parser;
+ * 
+ *
+ *  [0..3]            
+ * (reset) ------> ( [MOV_IMM, MOV_....], (PUSH) ... ) --->  
+ *   |
+ *   |    TRANSITION 
+ *    => 1000 0x8
+ *   |            |
+ *   .            |
+ *   .            | 
+ *   .            => [0..F]0x1  
+ *   |
+ *   |   ACCEPTED STATE {0xB_}
+ *    => 1011 -> MOV  => NON_VALID_INSTR 
+ * while( is_not_valid_instruction  ) {
+ *    search(SM)
+ * }
+ *
+ *
+ */
+
+typedef unsigned char State;
+
+
+struct _State{ 
+
+	_State() : is_valid{false} {
+
+	}
+
+	_State(std::string mnuemonic) : is_valid{true} {
+	}
+
+
+	~_State() {
+		for(int i = 0; i < 16; i++ ){
+			if (this->_next_state_values[i]){
+				delete this->_next_state_values[i];
+			}
+		}
+	}
+
+	_State* add_state(State value, std::string mnuemonic){
+		this->_next_state_values[value] = new _State{mnuemonic};
+		return this->_next_state_values[value];
+	}
+
+
+	_State* get_next_state(State value) { 
+		return this->_next_state_values[value];
+	}
+
+
+	Instruction* instruction;
+	bool is_valid;
+	_State* _next_state_values[16];
+};
+
+
+/*
+ *  
+ *  _State inital_state{false};
+ *  inital_state.add_state(0xB);
+ *
+ *  inital_state.add_state(0x8).add_state(0x2);
+ *  
+ *
+ *  
+ *
+ */
+
+
+struct TransitionInstructionState {
+	std::string	mnuemonic;
+	bool accepted_state;
+};
+
+
+std::map<State, std::map<State, TransitionInstructionState>> _mnuemonic{ 
+	 {0x8, {{0x2, {"mov", true}}, {0x1, {"mov", false}}}},
+	 {0xB, {{0xF, {"mov", true}}}},
+	 {0xC, {{0x3, {"mov", true}}}}, 
+};
+
+
+
 int 
 main(int argc, char** argv){
 	if (argc < 2){
@@ -115,27 +198,45 @@ main(int argc, char** argv){
 		exit(1);
 	}
 	std::cout << "bits 16" << std::endl;
-	std::cout << std::endl;
 
 	std::ifstream input(argv[1], std::ios::binary);
 	std::vector<unsigned char> buffer(std::istreambuf_iterator<char>(input), {});
-	const std::vector<std::string> w_registers{"ax", "cx", "dx","bx", "sp", "bp", "si", "di"};
+	const std::vector<std::string> w_registers{"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 	const std::vector<std::string> b_registers{"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 
-	
-	const std::map<unsigned char, const char*> hash_map{
-		{ 0x22, "MOV"},
+	_State inital_state{};
+	inital_state.add_state(0xB, nullptr)->add_state(0x2, "MOV");
 
+	std::map<uint8_t, std::string> inst_map{
+		{0x22, "mov"},
 	};
 
 
 	auto it = buffer.begin();
-
-	auto registers = &w_registers;
+	auto registers{&w_registers};
 	while(it != buffer.end()){
 		unsigned char op_code = (0xFC & *it) >> 2;
-		auto next_byte = *(++it); 
+		bool is_destination_reg = (0x02 & *it);
+		auto nibble{*it >> 4};
+		auto *state_map = &_mnuemonic;
+		
 
+		while(1) {
+			auto lo_map = state_map->find(nibble);
+		    if (lo_map == state_map->end()){ 
+		    	break;
+			}
+
+			auto lo_nibble{*it & 0xF};
+			TransitionInstructionState& state = lo_map->second[lo_nibble | 0xF];
+
+			if (state.accepted_state){
+				std::cout << state.mnuemonic;
+				break;
+			}
+			
+			break;
+		}
 		Instruction instr;
 		instr.op = op_code;
 
@@ -152,15 +253,28 @@ main(int argc, char** argv){
 				exit(1);
 		}
 
+		auto next_byte = *(++it); 
+		auto dest_idx = (0x38 & next_byte)>>3;
+		auto src_idx = (0x7 & next_byte);
+		if (!is_destination_reg) {
+			src_idx ^= dest_idx;
+			dest_idx ^= src_idx;
+			src_idx ^= dest_idx;
+		}
+		
+		auto mnuemonic = inst_map[instr.op];
 		switch ((next_byte & 0xC0) >> 6){
 			case Mod::MEM_MEM:
 				break;
 			case Mod::MEM_MOD_8:
+
 				break;
 			case Mod::MEM_MOD_16:
 				break;
 			case Mod::REGISTER_MOD: {
-				auto mnuemonic = hash_map[op_code];
+				auto d_reg = (*registers)[dest_idx];
+				auto src_reg = (*registers)[src_idx];
+				std::cout << mnuemonic << " " << d_reg << ", " << src_reg << std::endl;
 				break;
 			}
 			default:

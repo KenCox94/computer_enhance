@@ -1,4 +1,8 @@
 bits 16
-
-16 bits
-16 bits
+1
+0
+0
+0
+1
+0
+movmov cx, bx
