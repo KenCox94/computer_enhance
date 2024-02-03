@@ -135,7 +135,7 @@ struct _State{
 
 	}
 
-	_State(std::string mnuemonic) : is_valid{true} {
+	_State(Instruction* instruction) : is_valid{true} {
 	}
 
 
@@ -147,8 +147,8 @@ struct _State{
 		}
 	}
 
-	_State* add_state(State value, std::string mnuemonic){
-		this->_next_state_values[value] = new _State{mnuemonic};
+	_State* add_state(State value, Instruction* instruction){
+		this->_next_state_values[value] = new _State{instruction};
 		return this->_next_state_values[value];
 	}
 
@@ -169,7 +169,7 @@ struct _State{
  *  _State inital_state{false};
  *  inital_state.add_state(0xB);
  *
- *  inital_state.add_state(0x8).add_state(0x2);
+ *  inital_state.add_state(0x8, nullptr).add_state(0x2, nullptr);
  *  
  *
  *  
