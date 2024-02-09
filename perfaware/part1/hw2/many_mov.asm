@@ -9,4 +9,4 @@ mov cx, 3948
 mov cx, -3948
 mov al [bx + si]
 mov bx [bp + di]
-mov dx 
+mov dx [bp]

@@ -32,7 +32,7 @@ enum OpMode {
   REG_MOD,
 };
 
-const std::map<unsigned char, OpMode> OP_TYPE_MAP { {0x8, REG_MOD }, {0xB, ACC}};
+const std::map<unsigned char, OpMode> OP_TYPE_MAP { {0x8, REG_MOD }, {0xB, IMM_REG_MOD}, {0xA, ACC }};
 
 void reg_to_reg(std::string dst, std::string src) {
 	std::cout << "mov ";
@@ -95,17 +95,38 @@ public:
 			break;
 		};
 		case BIT_8: {
-			std::cout << "mov " << (*this->regs)[reg] << " "; 
+			if(this->fields[D]){ 
+				auto _register = (*this->regs)[reg];
+				std::cout << "mov " <<  _register << " ";
+				auto value = this->reg_reg_map.find(_register);
+				if ( value != this->reg_reg_map.end()){
+					std::cout << std::format("[{}]", value->second[0]) << std::endl; 
+				}
+			}
 			break;
 		};
+		case BIT_16: { 
+			std::cout << "mov " << std::endl;
+		};
 		default:
+			std::cout << "mov " << std::endl;
 			break;
   	}
   }
 
-  void reg_addr_calc(Data* data){
-  	 
-   
+  void accumulator(Data* data){ 
+	  std::cout << "mov ";
+	  void* imm;
+	  if(this->fields[W]){
+	  	  imm = (uint16_t*)(data->word);
+	  } else {
+	  	  imm = (uint8_t*)(data->byte);
+	  }
+	  if (this->fields[D]) {
+		  std::cout << reg <<  ", " << std::format("{}", imm) << std::endl; 
+	  } else {
+		  std::cout << std::format("{}", imm) <<  ", " << reg << std::endl; 
+	  }
   }
 
 private:
@@ -116,7 +137,7 @@ private:
                                              "sp", "bp", "si", "di"};
   const std::vector<std::string> b_registers{"al", "cl", "dl", "bl",
                                              "ah", "ch", "dh", "bh"};
-  const std::map<std::string, std::vector<std::string>> reg_reg_map{{"al", {"bx", "si"}}, {"bx", {"bp", "di"}}};
+  const std::map<std::string, std::vector<std::string>> reg_reg_map{{"al", {"bx", "si"}}, {"bx", {"bp", "di"}}, {"dx", {"bp", "si"}}};
 };
 
 int main(int argc, char **argv) {
@@ -154,7 +175,7 @@ int main(int argc, char **argv) {
     		advance_count = inst.perform_instruction(data_getter);
 	    	break;
 	    };
-	    case ACC: {
+	    case IMM_REG_MOD: {
 	    	bool field_w = (0x08 & *it) >> 3;
     		bool field_reg = (0x7 & *it);
     		Instruction inst{opcode, {field_reg, field_w}};
@@ -171,6 +192,22 @@ int main(int argc, char **argv) {
 			};
     		advance_count = inst.perform_instruction(data_getter);
     		break;
+		};
+		case ACC: {
+			bool field_w = (0x1 & *it);
+    		bool field_d = (0x2 & *it) >> 1;
+    		Instruction inst{opcode, {field_d, field_w}};
+			auto data_getter = [&](Data& data) {
+	    		size_t count{0};
+	    		if (field_w){
+					data.word =  *(++it) | (*(++it) << 0x8) ;
+					count++;
+				} else {
+					data.byte = *(++it);
+				}
+    			inst.accumulator(data);
+				return count;
+			};
 		};
 	    default:{
 	    	exit(1);
