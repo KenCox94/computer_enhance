@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <functional>
@@ -56,65 +57,100 @@ public:
   }
 
   template<typename F>
-  size_t perform_instruction(F& get_data){ 
-	  Data data;
-	  size_t count{1};
-	  count = get_data(data);	
-	  return count;
-  }
-
-  void imm_reg(Data* data){ 
+  size_t imm_reg(F& get_data){ 
+  	  Data data{get_data()};
+	  size_t count{0};
 	  std::cout << "mov ";
 	  std::cout << (*this->regs)[this->fields[R]] << ", ";
 	  if (this->fields[W]){
-		  std::cout << std::format("{}", data->word) << std::endl;
+		  std::cout << std::format("{}", data.word) << std::endl;
 	  } else {
-		  std::cout << std::format("{}", data->byte) << std::endl;
+		  std::cout << std::format("{}", data.byte) << std::endl;
 	  }
+	  return count;
   }
 
-  void reg_reg(Data* data, void (*fn)(std::string, std::string)) {
-	size_t reg = (data->byte & 0x38) >> 3;
-	size_t imm = (data->byte & 0x07);
-	size_t mod = (data->byte & 0xC0) >> 6;
+  template<typename F>
+  size_t reg_reg(F& get_data) {
+  	/*
+  	 * Get second byte of instruction
+  	 * */
+  	Data data{get_data(false)};
+	size_t reg = (data.byte & 0x38) >> 3;
+	size_t imm = (data.byte & 0x07);
+	size_t mod = (data.byte & 0xC0) >> 6;
+	size_t count{0};
 	switch(mod){
-		case REG: { 
-			if (this->fields[D]) {
-			  fn((*this->regs)[reg], (*this->regs)[imm]);
-			} else {
-			  fn((*this->regs)[imm], (*this->regs)[reg]);
-			}
-			break;
-		};
 		case MEMORY: {
-			std::cout << "mov " << (*this->regs)[reg] << " "; 
+			std::cout << "mov ";
 			auto value = this->reg_reg_map.find((*this->regs)[reg]);
 			if ( value != this->reg_reg_map.end()){
-				std::cout << std::format("[{} + {}]", value->second[0], value->second[1]) << std::endl; 
+				if (this->fields[D]) {
+			        std::cout << (*this->regs)[reg] << ", "; 
+					std::cout << std::format("[{} + {}]", value->second[0], value->second[1]) << std::endl; 
+				} else {
+					 std::cout << std::format("[{} + {}], ", value->second[0], value->second[1]); 
+			         std::cout << (*this->regs)[reg]  << std::endl; 
+				}
+			} 
+			break;
+		};
+		case REG: { 
+			if (this->fields[D]) {
+			  reg_to_reg((*this->regs)[reg], (*this->regs)[imm]);
+			} else {
+			  reg_to_reg((*this->regs)[imm], (*this->regs)[reg]);
 			}
 			break;
 		};
 		case BIT_8: {
-			if(this->fields[D]){ 
-				auto _register = (*this->regs)[reg];
-				std::cout << "mov " <<  _register << " ";
-				auto value = this->reg_reg_map.find(_register);
-				if ( value != this->reg_reg_map.end()){
-					std::cout << std::format("[{}]", value->second[0]) << std::endl; 
+			auto _register = (*this->regs)[reg];
+			auto value = this->reg_reg_map.find((*this->regs)[imm]);
+			std::cout << "mov ";
+			if(value != this->reg_reg_map.end()){
+				data = get_data(false);
+				if (this->fields[D]) {
+					std::cout << _register << ", ";
+					if( value->second.size() < 2) {
+						std::cout << std::format("[{} + {}]", value->second[0], data.byte) << std::endl; 
+					}else {
+						std::cout << std::format("[{} + {} + {}]", value->second[0], value->second[1], data.byte) << std::endl; 
+					}
+				}
+				else {
+					if(value->second.size() < 2){
+						std::cout << std::format("[{} + {}], ", value->second[0], data.byte); 
+					} else {
+						std::cout << std::format("[{} + {} + {}], ", value->second[0], value->second[1], data.byte); 
+					}
+
+					std::cout <<  _register << std::endl;
 				}
 			}
 			break;
 		};
-		case BIT_16: { 
-			std::cout << "mov " << std::endl;
+		case BIT_16: {
+			auto _register = (*this->regs)[reg];
+			std::cout << "mov " <<  _register << ", ";
+			auto value = this->reg_reg_map.find((*this->regs)[reg]);
+			if(value != this->reg_reg_map.end()){
+				data = get_data(true);
+				if(value->second.size() < 2){
+					std::cout << std::format("[{} + {}]", value->second[0], data.word) << std::endl; 
+				}else {
+					std::cout << std::format("[{} + {} + {}]", value->second[0], value->second[1], data.word) << std::endl; 
+				}
+			}
+
+			break;
 		};
 		default:
-			std::cout << "mov " << std::endl;
 			break;
   	}
+  	return count;
   }
 
-  void accumulator(Data* data){ 
+  size_t accumulator(Data* data){ 
 	  std::cout << "mov ";
 	  void* imm;
 	  if(this->fields[W]){
@@ -123,10 +159,11 @@ public:
 	  	  imm = (uint8_t*)(data->byte);
 	  }
 	  if (this->fields[D]) {
-		  std::cout << reg <<  ", " << std::format("{}", imm) << std::endl; 
+		  std::cout << "" <<  ", " << std::format("{}", imm) << std::endl; 
 	  } else {
-		  std::cout << std::format("{}", imm) <<  ", " << reg << std::endl; 
+		  std::cout << std::format("{}", imm) <<  ", " << "" << std::endl; 
 	  }
+	  return 0;
   }
 
 private:
@@ -137,7 +174,17 @@ private:
                                              "sp", "bp", "si", "di"};
   const std::vector<std::string> b_registers{"al", "cl", "dl", "bl",
                                              "ah", "ch", "dh", "bh"};
-  const std::map<std::string, std::vector<std::string>> reg_reg_map{{"al", {"bx", "si"}}, {"bx", {"bp", "di"}}, {"dx", {"bp", "si"}}};
+  const std::map<std::string, std::vector<std::string>> reg_reg_map{
+  	{"al", {"bx", "si"}}, 
+  	{"bx", {"bp", "di"}}, 
+  	{"dx", {"bp", "si"}}, 
+  	{"ah", {"bh", "si"}},
+	{"dh", {"bp"}},
+	{"si", {"bp"}},
+	{"cx", {"bx", "di"}},
+	{"cl", {"bp", "si"}}
+
+  };
 };
 
 int main(int argc, char **argv) {
@@ -152,68 +199,68 @@ int main(int argc, char **argv) {
 
   auto it = buffer.begin();
   while (it != buffer.end()) {
-
-    uint8_t opcode = ((*it & ~0x4) & 0xF0) >> 0x4;
-
+    uint8_t opcode = (*it & 0xF0) >> 0x4;
     size_t advance_count{1};
 	auto opcode_type = OP_TYPE_MAP.find(opcode);
 
 	if (opcode_type == OP_TYPE_MAP.end()){
+		std::cout << "could not find opcode " << std::format("{}", opcode) << std::endl;
 		exit(1);
 	}
-  	switch (opcode_type->second){ 
+	switch (opcode_type->second){ 
 		case REG_MOD: {
-			auto it_ref = &it;
-    		bool field_w = (0x01 & *it);
+    		bool field_w = (0x01 & *it); 
     		bool field_d = (0x02 & *it);
     		Instruction inst{opcode, {field_d, field_w}};
-			auto data_getter = [&](Data& data) {
-				data.byte = *(++it);
-				inst.reg_reg(&data, reg_to_reg); 	
-				return 1;
-			};
-    		advance_count = inst.perform_instruction(data_getter);
-	    	break;
-	    };
-	    case IMM_REG_MOD: {
-	    	bool field_w = (0x08 & *it) >> 3;
-    		bool field_reg = (0x7 & *it);
-    		Instruction inst{opcode, {field_reg, field_w}};
-	    	auto data_getter = [&](Data& data) {
-	    		size_t count{0};
-	    		if (field_w){
-					data.word =  *(++it) | (*(++it) << 0x8) ;
-					count++;
+			auto data_getter = [&](bool flag) {
+				Data data;
+				if (flag) {
+					data.word =  *(++it) | (*(++it) << 0x8);
 				} else {
 					data.byte = *(++it);
 				}
-				inst.imm_reg(&data);
-				return count;
+				return data; 	
 			};
-    		advance_count = inst.perform_instruction(data_getter);
+    		advance_count += inst.reg_reg(data_getter);
+	    	break;
+	    };
+	    case IMM_REG_MOD: {
+	    	uint8_t field_w = (0x08 & *it) >> 3;
+    		uint8_t field_reg = (0x7 & *it);
+    		Instruction inst{opcode, {field_reg, field_w}};
+	    	auto data_getter = [&]() {
+				Data data;
+	    		if (field_w){
+					data.word =  *(++it) | (*(++it) << 0x8);
+				} else {
+					data.byte = *(++it);
+				}
+				return data;
+			};
+    		advance_count += inst.imm_reg(data_getter);
     		break;
 		};
 		case ACC: {
 			bool field_w = (0x1 & *it);
     		bool field_d = (0x2 & *it) >> 1;
     		Instruction inst{opcode, {field_d, field_w}};
-			auto data_getter = [&](Data& data) {
-	    		size_t count{0};
+			auto data_getter = [&]() {
+				Data data;
 	    		if (field_w){
-					data.word =  *(++it) | (*(++it) << 0x8) ;
-					count++;
-				} else {
 					data.byte = *(++it);
 				}
-    			inst.accumulator(data);
-				return count;
+				return data;
 			};
+    		advance_count += 1;
+    		break;
 		};
 	    default:{
+	    	std::cout << "cannot process opcode " << std::endl;
 	    	exit(1);
 	    }
 	};
-	it += 1;
+
+	std::advance(it, advance_count);
   
   }
 }
